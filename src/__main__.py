@@ -1,7 +1,7 @@
 import json 
 from pathlib import Path
 from llm_sdk import Small_LLM_Model
-from .vocabulay import Vocabulary
+from .vocabulary import Vocabulary
 from .constrained_decoder import constrained_decoding
 from .models import functiondef , prompt , FunctionCallResult
 
@@ -31,7 +31,7 @@ def main():
     # load the model and vocab
     print("loading the model...")
     model = Small_LLM_Model()
-    vocab =  Vocabulary(model.get_path_to_vocab_file())
+    vocab =  Vocabulary(model.get_path_to_tokenizer_file())
     decoder  = constrained_decoding(model, vocab)
 
     # process each prompt
