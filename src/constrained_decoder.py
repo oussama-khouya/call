@@ -1,261 +1,296 @@
-# ABOUTME: Core constrained decoding engine for JSON generation.
-# ABOUTME: Guarantees 100% valid, schema-compliant JSON output by masking
-# ABOUTME: invalid tokens at each generation step.
-
+from llm_sdk import Small_LLM_Model
+from src.vocabulary import Vocabulary # why this vocabually is giving error 
+from src.models import functiondef , FunctionCallResult
+from src.prompt_builder import prompt_builder
 from typing import Any
 
-from llm_sdk import Small_LLM_Model
-from src.models import FunctionDefinition
-from src.vocabulary import Vocabulary
-from src.prompt_builder import build_function_selection_prompt
+class constrained_decoding():
+    def __init__(self, model : Small_LLM_Model, vocab : Vocabulary) -> None:
+        self.model = model # why we save the model !!!
+
+        # filter and replace space
+        self.tokens = {}
+        for token_id , token in vocab.id_to_token.items():
+            clean = token.replace("Ġ", " ")
+            if clean:
+                self.tokens[token_id] = clean
+
+        # filter and save number tokens 
+        self.num_tokens = {i : token for i , token in self.tokens.items() if all(char in "0123456789.-" for char in token)} # why we didnt also put + here 
+
+        # filter and save str tokens ord() gives the ascii but why we did that if '"' not in why that condition
+        self.str_tokens = {i : token for i , token  in self.tokens.items() if '"' not in token and all(ord(char) >= 32 for char in token)}
+        
+        # find and save quote id initialzed to none
+        self._quote_id : int | None = None
+        for idd, token in self.tokens.items():
+            if token == '"':
+                self._quote_id = idd
+                break
+        # filter and save stop tokens that is | , | { | " | newline |.  i have a question does that token " ,hello" consider as a stop token and if so is it hello not stop 
+        self.stop_tokens = {i : toke for i , toke in self.tokens.items() if toke.lstrip() and toke.lstrip()[0] in ',}"\n' }
+
+    #build the main function that process the prompt
+    def process_prompt(self, functions : list[functiondef], user_prompt : str) ->  FunctionCallResult:
+        prompt : str  = prompt_builder(functions, user_prompt)
+        prefix : str =  '{"name": "'
+        input_ids : list[int] = self.model.encode(prompt + prefix)[0].tolist()
+        
+        #using the input ids i should select the function name
+        #create a function that do that job (picking the right function name) its a function that pick from a list of things 
+        fn_name : str = self.generate_function_name(input_ids,[f.name for f in functions])
+        #use next we generator expretion () to check function by function we generate the function object
+        fn : functiondef = next((f for f in functions if f.name == fn_name), functions[0])
 
 
-class ConstrainedDecoder:
-    """Generates structured function calls using constrained decoding."""
-
-    def __init__(self, model: Small_LLM_Model, vocab: Vocabulary) -> None:
-        """Initialize the decoder with the model and vocabulary.
-
-        Args:
-            model: The LLM model instance.
-            vocab: The loaded vocabulary object.
-        """
-        self.model = model
-
-        # Normalize special characters: Ġ = space, Ċ = newline
-        self._tokens: dict[int, str] = {}
-        for i, t in vocab.id_to_token.items():
-            norm = t.replace("Ġ", " ").replace("Ċ", "\n").replace("ĉ", "\t")
-            if norm:
-                self._tokens[i] = norm
-
-        # Pre-filter token subsets once at startup for speed
-        # Number tokens: only contain digits, dot, or minus
-        self._num_tokens: dict[int, str] = {
-            i: t for i, t in self._tokens.items()
-            if all(c in "0123456789.-" for c in t)
-        }
-
-        # String tokens: no quotes, only printable characters
-        self._str_tokens: dict[int, str] = {
-            i: t for i, t in self._tokens.items()
-            if '"' not in t and all(ord(c) >= 32 for c in t)
-        }
-
-        # The token ID for a double quote character
-        self._quote_id: int | None = next(
-            (i for i, t in self._tokens.items() if t == '"'), None
-        )
-
-    def process_prompt(
-        self, functions: list[FunctionDefinition], user_prompt: str
-    ) -> dict[str, Any]:
-        """Turn a user prompt into a structured function call dictionary.
-
-        Args:
-            functions: List of available function definitions.
-            user_prompt: The natural language request from the user.
-
-        Returns:
-            A dictionary with keys: prompt, name, parameters.
-        """
-        prompt = build_function_selection_prompt(functions, user_prompt)
-
-        # Start building the output JSON prefix
-        prefix = '{"name": "'
-        input_ids = self.model.encode(prompt + prefix)[0].tolist()
-
-        # Step 1: let the model pick the function name
-        fn_name = self._generate_options(input_ids, [f.name for f in functions])
-        fn = next((f for f in functions if f.name == fn_name), functions[0])
-
-        # Step 2: generate each argument based on its type
-        args: dict[str, Any] = {}
+        #next step find the arguments
+        #  {"name": "fn_add_numbers", "parameters": {
+        args : dict[str, Any] = {} # args{"a" : 12, "name" : "string", "bool" , True} 
         prefix += fn.name + '", "parameters": {'
-
-        for i, (p_name, p_def) in enumerate(fn.parameters.items()):
+        for i, (p_name, p_def) in enumerate(fn.parameters.items()): #explain this part give examples why we need the index 
             sep = ", " if i > 0 else ""
             prefix += sep + f'"{p_name}": '
-            ids = self.model.encode(prompt + prefix)[0].tolist()
+            # encode everything together so the model generate the correct value of a
+            input_ids = self.model.encode(prompt + prefix)[0].tolist()
 
+            # we need to generate the value based on the paremeter type
             if p_def.type == "boolean":
-                val_str = self._generate_options(ids, ["true", "false"])
+                val_str : str  = self.generate_function_name(input_ids, ["true", "false"])
                 args[p_name] = val_str == "true"
                 prefix += val_str
-
             elif p_def.type == "number":
-                val_str = self._generate_number(ids)
+                val_str : str  =  self._generate_number(input_ids) # generate a number a str
                 try:
                     args[p_name] = float(val_str)
                 except ValueError:
                     args[p_name] = 0.0
                 prefix += val_str
-
-            else:  # string
-                val_str = self._generate_string(ids)
+            else:
+                val_str = self._generate_string(input_ids, param_name = p_name)
                 args[p_name] = val_str
-                prefix += '"' + val_str.replace('\\', '\\\\').replace('"', '\\"') + '"'
-
-        return {
-            "prompt": user_prompt,
-            "name": fn.name,
-            "parameters": args,
-        }
-
-    def _generate_options(
-        self, input_ids: list[int], options: list[str]
-    ) -> str:
-        """Pick exactly one option by generating tokens one at a time.
-
-        Args:
-            input_ids: Current token ID sequence fed to the model.
-            options: List of valid string options to choose from.
-
-        Returns:
-            The selected option string.
-        """
-        generated = ""
-
-        while True:
-            # Which options still match what we have built so far?
-            still_valid = [o for o in options if o.startswith(generated)]
-
-            # Done: only one option left, or nothing matched (use fallback)
-            if len(still_valid) <= 1:
-                return still_valid[0] if still_valid else options[0]
-
-            # Ask the model: which token comes next?
-            logits = self.model.get_logits_from_input_ids(input_ids)
-
-            # Find the highest-scoring token that continues a valid option
-            best_id: int | None = None
-            best_score = -float("inf")
-
-            for token_id, token_str in self._tokens.items():
-                candidate = generated + token_str
-                if any(o.startswith(candidate) for o in still_valid):
-                    if logits[token_id] > best_score:
-                        best_score, best_id = logits[token_id], token_id
-
-            # No valid token found — return best remaining option
-            if best_id is None:
-                return still_valid[0]
-
-            generated += self._tokens[best_id]
-            input_ids.append(best_id)
-
-            # Exact match — we are done
-            if generated in options:
-                return generated
-
-    def _generate_number(self, input_ids: list[int]) -> str:
-        """Generate a valid number string like 40.0 or -3.14.
-
-        Args:
-            input_ids: Current token ID sequence fed to the model.
-
-        Returns:
-            A string representing a valid float number.
-        """
-        generated = ""
-
-        for _ in range(20):  # max 20 tokens is more than enough for any number
-            logits = self.model.get_logits_from_input_ids(input_ids)
-
-            best_id: int | None = None
-            best_score = -float("inf")
-
-            for token_id, token_str in self._num_tokens.items():
-                candidate = generated + token_str
-                if self._is_valid_num_prefix(candidate):
-                    if logits[token_id] > best_score:
-                        best_score, best_id = logits[token_id], token_id
-
-            # No valid number token scored higher — the number is complete
-            if best_id is None:
-                break
-
-            generated += self._tokens[best_id]
-            input_ids.append(best_id)
-
-        return generated if self._is_valid_num(generated) else "0.0"
-
-    def _generate_string(self, input_ids: list[int]) -> str:
-        """Generate a string value without surrounding quotes.
-
-        Args:
-            input_ids: Current token ID sequence fed to the model.
-
-        Returns:
-            The string content (no quotes).
-        """
-        generated = ""
-
-        # Add opening quote to the context so the model knows we are in a string
-        if self._quote_id is not None:
-            input_ids.append(self._quote_id)
-
-        for _ in range(50):  # max 50 tokens for a string value
-            logits = self.model.get_logits_from_input_ids(input_ids)
-
-            # Start by considering the closing quote as a candidate
-            best_id: int | None = self._quote_id
-            best_score = (
-                logits[self._quote_id]
-                if self._quote_id is not None
-                else -float("inf")
+                prefix += '"' + val_str + '"'
+            
+            
+        return  FunctionCallResult(
+            prompt= user_prompt,
+            name = fn.name,
+            parameters = args
             )
 
-            # Consider all safe printable string tokens
-            for token_id, token_str in self._str_tokens.items():
-                if logits[token_id] > best_score:
-                    best_score, best_id = logits[token_id], token_id
-
-            # Model chose to close the string — we are done
-            if best_id == self._quote_id:
-                return generated
-
-            if best_id is None:
-                return generated
-
-            generated += self._tokens[best_id]
-            input_ids.append(best_id)
-
-        return generated
-
-    def _is_valid_num_prefix(self, s: str) -> bool:
-        """Check if s could be the beginning of a valid number.
-
-        Args:
-            s: The string to check.
-
-        Returns:
-            True if s is a valid number prefix.
-        """
-        # A lone minus or empty string is a valid start
-        if s in ("", "-"):
-            return True
-        # A number ending with a dot like "3." is a valid prefix
-        if s.endswith("."):
-            try:
-                float(s[:-1])
-                return True
-            except ValueError:
-                return False
-        # Otherwise it must already be a valid float
-        return self._is_valid_num(s)
-
-    def _is_valid_num(self, s: str) -> bool:
-        """Check if s is a complete valid number.
-
-        Args:
-            s: The string to check.
-
-        Returns:
-            True if s can be parsed as a float.
-        """
+    
+    # i will see that later
+    # i need to create a function that generate arg number token by token
+    # first i need to check if its a valid number 
+    def _is_valid_num(self, s : str) -> bool:
         try:
             float(s)
             return True
         except ValueError:
             return False
+    def _is_valid_prefix(self, ss : str) -> bool:
+        # emty string or start only + or -
+        if ss in ("", "-", "+"):
+            return True
+        # if it end with 2. or 2.. we check the charcter before . 
+        if ss.endswith("."):
+            try:
+                float(ss[:-1])
+                return True
+            except Exception:
+                return False
+            
+        #anything else we can check it with is valid number 
+        # 2 3 normal or 2++ or 2-- or those characters
+        return self._is_valid_num(ss)
+        
+
+    
+    def _generate_number(self, input_ids : list[int]) -> str:
+        generated = ""
+        for _ in range (16):
+            best_score = float("-inf")
+            best_id : int | None = None
+            try :
+                logits = self.model.get_logits_from_input_ids(input_ids)
+            except Exception as e:
+                print(f"error : {e}")
+                break
+
+            for i , t in self.num_tokens.items():
+                # skip scientique notations 
+                if "e" in t or "E" in t :  # there is some scientifique numbers that are like this 2e4 or 2E4
+                    continue
+                condidate = generated + t
+                # here we need to check if the condidate could still lead to a valid number ex 2. not 2.. not valid prefix 
+                if  self._is_valid_prefix(condidate):
+                    if logits[i] > best_score:
+                        best_score = logits[i]
+                        best_id = i
+                
+            # if no valid token was found, stop
+            if best_id is None:
+                break
+                
+            # define a stopping condition 
+            # check if the model suggest to stop by suggestion a stop token its score bigger than the best score 
+            if generated and self._is_valid_num(generated):
+                best_stop_token = max(logits[idd] for idd in self.stop_tokens)
+                if best_stop_token > best_score:
+                    break
+            
+            # lets add best id to input ids
+            generated += self.num_tokens[best_id]
+
+            input_ids.append(best_id)
+
+        return generated if self._is_valid_num(generated) else "0.0" # just a fall back 
+
+    # lets generate the function that generate string 
+    # we have a problem small llm sometimes stuck in infinty loop when generating a text 
+    # example hellohellohellohellohello so we need to check is it duplicated or not 
+
+    def is_duplicate(self, s : str) -> bool:
+        lenf = len(s)
+        # lp is len pattern
+        # we started with as its when we start reputation on pupose till the half 
+        for lp in range (1 ,lenf // 2 + 1):
+            if s[lenf - lp : lenf] == s[lenf - lp * 2 : lenf - lp]:
+                return True
+        return False
+    
+    # we then need to strip the diplicated 
+    # if it was hellohellohellohello -> hello 
+    def strip_duplicated(self, s : str) -> str:
+        lenf = len(s)
+        for pl in range(1, lenf // 2 + 1):
+            pattern = s[lenf - pl : lenf] # hello is the pattern 
+            if s[lenf - 2 * pl : lenf - pl] == pattern:
+                while s.endswith(pattern) and len(s) > pl:
+                    s = s[:-pl]
+                return s
+        return s
+
+    def _generate_string(self, input_ids : list [int], param_name : str = "") -> str:  # include param_name so we know is it regex or normal string and its detault is empty 
+        generated = ""
+        # explain what is regex and why we have to create a max char for it 
+        if param_name == "regex":
+            max_char = 12
+        else:
+            max_char = 80
+
+        # add the quote id to the model so he knows that we are inside a str
+        if self._quote_id is not None:
+            input_ids.append(self._quote_id)
+
+        
+        # the loop that generate each token
+        for _ in range(80):
+            # lets get the logists 
+            try:
+                logits = self.model.get_logits_from_input_ids(input_ids)
+            except Exception as e:
+                print(f"logits error {e}")
+                return generated
+            
+            # check the reputation 
+            if len(generated) > max_char:
+                return self.strip_duplicated(generated)
+            
+            
+            #check if the stop token is in the top 5 atlest that means that the model are suggesting to stop but not uncertien 
+            # for regex we use a bigger threshold (top 50) so the model stops sooner
+            if self._quote_id is not None and generated:
+                stop_threshold = 50 if param_name == "regex" else 5
+                count_quote_score = sum (
+                    1 for score in logits
+                    if score > logits[self._quote_id]
+                )
+                if count_quote_score < stop_threshold:
+                    return generated
+
+            quote_score = (logits [self._quote_id] 
+                           if self._quote_id is not None 
+                           else -float("inf"))  # as a fall back 
+
+            # best score by defualt is quote score cause its beg of a str 
+            best_score = quote_score
+            best_id = self._quote_id
+            for i, t in self.str_tokens.items():
+                if logits[i] > best_score:
+                    best_score = logits[i]
+                    best_id  = i
+
+            # the end of the string is a quote 
+            # check the quote score 
+            if best_id == self._quote_id or best_id is None :
+                return generated
+
+            generated += self.str_tokens[best_id]
+            input_ids.append(best_id)
+
+            # check if the model is stuck in repuation
+            if len(generated) > 10 and self.is_duplicate(generated):
+                return self.strip_duplicated(generated)
+            
+
+            
+
+        # return the result
+        return self.strip_duplicated(generated)    
+            
+
+    def generate_function_name(self ,input_ids : list[int], functions_names : list[str]) -> str:
+        generated = ""
+        # create a loop that pick every token till it find the whole function
+        while True:
+            still_valid = [f for f in functions_names if f.startswith(generated)]
+            if len(still_valid) <= 1:
+                return still_valid[0] if still_valid else functions_names[0] # just a fallback 
+            
+            #start scoring
+            try:
+                logits = self.model.get_logits_from_input_ids(input_ids) 
+            except Exception as e:
+                print(f"logits error, {e}")
+                return still_valid[0] #fall back
+
+            
+            #Setting best id and best score
+            best_id : int | None = None
+            best_score = float("-inf")    #cause its the lowest possibile score 
+            for tid , tk in self.tokens.items():
+                maybe = generated + tk
+                if any(sv.startswith(maybe) for sv in still_valid):
+                    if best_score < logits[tid]:
+                        best_id , best_score = tid, logits[tid]
+
+            # what if we didnt find no token best_id = none
+            if best_id == None:
+                return still_valid[0] # fall back 
+
+            #we found the best id now with the best score
+            generated += self.tokens[best_id]
+            # we should add that best id to input ids
+            input_ids.append(best_id)
+
+            #now return the that generated
+            if generated in functions_names:
+                return generated
+
+
+
+
+             
+            
+            
+
+
+
+
+
+        
+
+
+
+
+        

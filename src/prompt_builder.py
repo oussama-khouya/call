@@ -1,45 +1,43 @@
-# ABOUTME: Builds the prompt string sent to the LLM for function selection.
-# ABOUTME: Formats available functions and user query into a prompt.
+from src.models import functiondef
 
-from src.models import FunctionDefinition
+def prompt_builder(functions : list[functiondef], user_prompt) -> str:
 
+    # we need first to build a function block that have 
+    # the function name (the parameters with its types ) and function decription 
+    # [ add ("a": int , "b" : int)  Adds two numbers , and other function and so one] list of strs
 
-def build_function_selection_prompt(
-    functions: list[FunctionDefinition],
-    user_prompt: str,
-) -> str:
-    """Build a prompt that asks the LLM to select which function to call.
-
-    The prompt lists all available functions with their descriptions and
-    parameter schemas, then presents the user's query. The LLM is expected
-    to respond with a JSON object containing the function name and arguments.
-
-    Args:
-        functions: List of available function definitions.
-        user_prompt: The natural language request from the user.
-
-    Returns:
-        A formatted prompt string for the LLM.
-    """
-    func_descriptions: list[str] = []
+    function_lines = []
+    # we need function by function 
     for fn in functions:
-        params_str = ", ".join(
-            f"{pname}: {pdef.type}" for pname, pdef in fn.parameters.items()
-        )
-        func_descriptions.append(
-            f"- {fn.name}({params_str}): {fn.description}"
-        )
+        # we need to get parameters first 
+        param = " ,".join(f"{name} : {p_def.type}" for name , p_def in fn.parameters.items())
+        function_lines.append(f"- {fn.name} ({param}) : {fn.description}")
 
-    functions_block = "\n".join(func_descriptions)
-
-    prompt = (
+    #in the end i want them to become blocks sep by new line
+    functions_block = "\n".join(function_lines)
+    return (
         f"You are a function calling assistant. "
         f"Given the user request, select the correct function and extract "
         f"its arguments.\n\n"
         f"Available functions:\n{functions_block}\n\n"
+        f"Rules for regex parameters:\n"
+        f"- Use simple, short regex patterns\n"
+        f"- To match all numbers: [0-9]+\n"
+        f"- To match all vowels: [aeiouAEIOU]\n"
+        f"- To match a word exactly: cat\n"
+        f"- replacement is the exact literal replacement string\n\n"
         f"User request: {user_prompt}\n\n"
-        f"Respond with a JSON object containing \"name\" and \"parameters\".\n"
-        f"Example: {{\"name\": \"fn_add\", \"parameters\": {{\"a\": 2}}}}\n\n"
+        f"Respond with only a JSON object.\n"
+        f"Examples:\n"
+        f"{{\"name\": \"fn_add_numbers\", "
+        f"\"parameters\": {{\"a\": 5, \"b\": 3}}}}\n"
+        f"{{\"name\": \"fn_substitute_string_with_regex\", "
+        f"\"parameters\": {{\"source_string\": \"abc 123\", "
+        f"\"regex\": \"[0-9]+\", \"replacement\": \"NUMBERS\"}}}}\n"
+        f"{{\"name\": \"fn_substitute_string_with_regex\", "
+        f"\"parameters\": {{\"source_string\": \"hello\", "
+        f"\"regex\": \"[aeiouAEIOU]\", \"replacement\": \"*\"}}}}\n\n"
         f"JSON response:\n"
     )
-    return prompt
+
+        

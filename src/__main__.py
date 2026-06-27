@@ -1,230 +1,68 @@
-# ABOUTME: Main entry point for the function calling project.
-# ABOUTME: Handles CLI arguments, loads input files, runs inference,
-# ABOUTME: and writes output results.
-
-import argparse
-import json
-import os
-import sys
-import time
-from typing import Any
-
-from src.models import FunctionDefinition, TestPrompt, FunctionCallResult
-from src.vocabulary import Vocabulary
-from src.constrained_decoder import ConstrainedDecoder
+import json 
+from pathlib import Path
+from llm_sdk import Small_LLM_Model
+from .vocabulay import Vocabulary
+from .constrained_decoder import constrained_decoding
+from .models import functiondef , prompt , FunctionCallResult
 
 
-def parse_args() -> argparse.Namespace:
-    """Parse command-line arguments.
+# create file path to make things easy 
 
-    Returns:
-        Parsed arguments namespace.
-    """
-    parser = argparse.ArgumentParser(
-        description="Function calling with constrained decoding for LLMs"
-    )
-    parser.add_argument(
-        "--functions_definition",
-        type=str,
-        default="data/input/functions_definition.json",
-        help="Path to the function definitions JSON file",
-    )
-    parser.add_argument(
-        "--input",
-        type=str,
-        default="data/input/function_calling_tests.json",
-        help="Path to the input prompts JSON file",
-    )
-    parser.add_argument(
-        "--output",
-        type=str,
-        default="data/output/function_calling_results.json",
-        help="Path to the output results JSON file",
-    )
-    return parser.parse_args()
+functions_file = "data/input/functions_definition.json"
+prompt_file = "data/input/function_calling_tests.json"
+output_file = "data/output/function_calling_results.json"
 
 
-def load_functions(path: str) -> list[FunctionDefinition]:
-    """Load and validate function definitions from a JSON file.
 
-    Args:
-        path: Path to the functions_definition.json file.
+def main():
 
-    Returns:
-        List of validated FunctionDefinition objects.
-
-    Raises:
-        SystemExit: If the file is missing or contains invalid JSON.
-    """
-    if not os.path.exists(path):
-        print(f"Error: Function definitions file not found: {path}")
-        sys.exit(1)
-
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            raw_data = json.load(f)
-    except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON in function definitions file: {e}")
-        sys.exit(1)
-
-    if not isinstance(raw_data, list):
-        print("Error: Function definitions must be a JSON array")
-        sys.exit(1)
-
-    functions: list[FunctionDefinition] = []
-    for item in raw_data:
-        try:
-            fn = FunctionDefinition(**item)
-            functions.append(fn)
-        except Exception as e:
-            print(f"Warning: Skipping invalid function definition: {e}")
-
-    if not functions:
-        print("Error: No valid function definitions found")
-        sys.exit(1)
-
-    return functions
+    # load the functions from json  to python object dict using json.load(f) then to a pydantic object so we can validate its data automaticlly
+    with open(functions_file, "r", encoding="utf-8") as f:
+            # For each dictionary in that list, model_validate converts it from a raw dict into a proper functiondef pydantic object
+        functions = [functiondef.model_validate(fun) for fun in json.load(f)]
 
 
-def load_prompts(path: str) -> list[TestPrompt]:
-    """Load and validate test prompts from a JSON file.
-
-    Args:
-        path: Path to the function_calling_tests.json file.
-
-    Returns:
-        List of validated TestPrompt objects.
-
-    Raises:
-        SystemExit: If the file is missing or contains invalid JSON.
-    """
-    if not os.path.exists(path):
-        print(f"Error: Input file not found: {path}")
-        sys.exit(1)
-
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            raw_data = json.load(f)
-    except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON in input file: {e}")
-        sys.exit(1)
-
-    if not isinstance(raw_data, list):
-        print("Error: Input file must be a JSON array")
-        sys.exit(1)
-
-    prompts: list[TestPrompt] = []
-    for item in raw_data:
-        try:
-            prompt = TestPrompt(**item)
-            prompts.append(prompt)
-        except Exception as e:
-            print(f"Warning: Skipping invalid prompt: {e}")
-
-    return prompts
+    # load the prompts 
+    with open (prompt_file, "r", encoding="utf-8") as f:
+        prompts = [prompt.model_validate(prom) for prom in json.load(f)]
 
 
-def save_results(results: list[dict[str, Any]], path: str) -> None:
-    """Save function call results to a JSON file.
 
-    Creates the output directory if it doesn't exist.
+    # load the model and vocab
+    print("loading the model...")
+    model = Small_LLM_Model()
+    vocab =  Vocabulary(model.get_path_to_vocab_file())
+    decoder  = constrained_decoding(model, vocab)
 
-    Args:
-        results: List of result dictionaries.
-        path: Output file path.
-    """
-    output_dir = os.path.dirname(path)
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
+    # process each prompt
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2, ensure_ascii=False)
-
-    print(f"Results saved to: {path}")
+    results = []
+    for i , p in enumerate(prompts, 1):
+        print(f'[{i} / {len(prompts)}] / "{p.prompt}"')
+        result : FunctionCallResult =  decoder.process_prompt(functions, p.prompt)
+        results.append(result)
+        #for display
+        print(f"  -> {result.name}({result.parameters})")
 
 
-def main() -> None:
-    """Main entry point: load data, run inference, save results."""
-    args = parse_args()
+    # SAVE THE RESULTS to output file
+    # we gonna use path for more dianamic use 
 
-    print("=" * 60)
-    print("  Call Me Maybe - Function Calling with Constrained Decoding")
-    print("=" * 60)
-
-    # Load input files
-    print("\n[1/4] Loading function definitions...")
-    functions = load_functions(args.functions_definition)
-    print(f"  Loaded {len(functions)} function(s):")
-    for fn in functions:
-        params = ", ".join(
-            f"{k}: {v.type}" for k, v in fn.parameters.items()
-        )
-        print(f"    - {fn.name}({params})")
-
-    print("\n[2/4] Loading test prompts...")
-    prompts = load_prompts(args.input)
-    print(f"  Loaded {len(prompts)} prompt(s)")
-
-    # Initialize the LLM and decoder
-    print("\n[3/4] Initializing LLM model (Qwen/Qwen3-0.6B)...")
-    try:
-        from llm_sdk import Small_LLM_Model
-        model = Small_LLM_Model()
-    except Exception as e:
-        print(f"Error: Failed to initialize LLM model: {e}")
-        sys.exit(1)
-
-    print("  Loading vocabulary...")
-    try:
-        tokenizer_path = model.get_path_to_tokenizer_file()
-        vocab = Vocabulary(tokenizer_path)
-        print(f"  Vocabulary size: {vocab.size} tokens")
-    except Exception as e:
-        print(f"Error: Failed to load vocabulary: {e}")
-        sys.exit(1)
-
-    decoder = ConstrainedDecoder(model, vocab)
-
-    # Process all prompts
-    print(f"\n[4/4] Processing {len(prompts)} prompt(s)...")
-    results: list[dict[str, Any]] = []
-    start_time = time.time()
-
-    for i, test_prompt in enumerate(prompts):
-        prompt_start = time.time()
-        print(f"\n  [{i + 1}/{len(prompts)}] \"{test_prompt.prompt}\"")
-
-        try:
-            result = decoder.process_prompt(functions, test_prompt.prompt)
-            # Validate with pydantic
-            validated = FunctionCallResult(**result)
-            results.append(validated.model_dump())
-            elapsed = time.time() - prompt_start
-            print(
-                f"    -> {result['name']}({result['parameters']}) "
-                f"[{elapsed:.1f}s]"
-            )
-        except Exception as e:
-            print(f"    Error processing prompt: {e}")
-            # Add a best-effort result
-            results.append({
-                "prompt": test_prompt.prompt,
-                "name": functions[0].name,
-                "parameters": {
-                    k: 0.0 if v.type == "number" else ""
-                    for k, v in functions[0].parameters.items()
-                },
-            })
-
-    total_time = time.time() - start_time
-    print(f"\n  Total processing time: {total_time:.1f}s")
-
-    # Save results
-    print("\nSaving results...")
-    save_results(results, args.output)
-
-    print("\nDone!")
+    out = Path(output_file)
+    # then we should create that data/output folder to write in it 
+    # .parent this create the parent folder 
+    out.parent.mkdir(parents=True, exist_ok=True)
+    # we open and write into the file
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump([r.model_dump() for r in results],f, indent=2, ensure_ascii=True )
+    print(f"\nDone. {len(results)} result(s) written to {output_file}")
 
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
