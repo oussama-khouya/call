@@ -8,12 +8,10 @@ from .models import functiondef , prompt , FunctionCallResult
 
 # create file path to make things easy 
 
-# functions_file = "data/input/functions_definition.json"
-# prompt_file = "data/input/function_calling_tests.json"
-# output_file = "data/output/function_calling_results.json"
-functions_file = "./moulinette/data/input/functions_definition.json"
-prompt_file = "./moulinette/data/input/function_calling_tests.json"
+functions_file = "data/input/functions_definition.json"
+prompt_file = "data/input/function_calling_tests.json"
 output_file = "data/output/function_calling_results.json"
+
 
 
 def main():

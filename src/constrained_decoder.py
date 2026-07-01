@@ -11,15 +11,16 @@ class constrained_decoding():
         # filter and replace space
         self.tokens = {}
         for token_id , token in vocab.id_to_token.items():
-            clean = token.replace("Ġ", " ")
+            clean =  token.replace("Ġ", " ").replace("Ċ", "\n").replace("ĉ", "\t")
+
             if clean:
                 self.tokens[token_id] = clean
 
         # filter and save number tokens 
-        self.num_tokens = {i : token for i , token in self.tokens.items() if all(char in "0123456789.-" for char in token)} # why we didnt also put + here 
+        self.num_tokens = {i : token for i , token in self.tokens.items() if all(char in "0123456789.- " for char in token)} # why we didnt also put + here 
 
-        # filter and save str tokens ord() gives the ascii but why we did that if '"' not in why that condition
-        self.str_tokens = {i : token for i , token  in self.tokens.items() if '"' not in token and all(ord(char) >= 32 for char in token)}
+        # filter and save str tokens ord() gives the ascii but why we did that if '"' not in why that condition and block in none priintable charcter 
+        self.str_tokens = {i : token for i , token  in self.tokens.items() if '"' not in token and all( 32 <= ord(char) <= 126 for char in token)}
         
         # find and save quote id initialzed to none
         self._quote_id : int | None = None
@@ -58,15 +59,19 @@ class constrained_decoding():
                 val_str : str  = self.generate_function_name(input_ids, ["true", "false"])
                 args[p_name] = val_str == "true"
                 prefix += val_str
-            elif p_def.type == "number":
+            elif p_def.type in ("number", "integer"):
                 val_str : str  =  self._generate_number(input_ids) # generate a number a str
                 try:
-                    args[p_name] = float(val_str)
+                    num = float(val_str)
+                    if p_def.type == "integer" :
+                        args[p_name] = int(num)
+                    else:
+                        args[p_name] = num
                 except ValueError:
-                    args[p_name] = 0.0
+                    args[p_name] = 0
                 prefix += val_str
             else:
-                val_str = self._generate_string(input_ids, param_name = p_name)
+                val_str = self._generate_string(input_ids, param_name = p_name).lstrip()
                 args[p_name] = val_str
                 prefix += '"' + val_str + '"'
             
@@ -89,7 +94,7 @@ class constrained_decoding():
             return False
     def _is_valid_prefix(self, ss : str) -> bool:
         # emty string or start only + or -
-        if ss in ("", "-", "+"):
+        if ss in ("", " -", "-"):
             return True
         # if it end with 2. or 2.. we check the charcter before . 
         if ss.endswith("."):
@@ -139,7 +144,7 @@ class constrained_decoding():
                     break
             
             # lets add best id to input ids
-            generated += self.num_tokens[best_id]
+            generated += self.num_tokens[best_id].strip()
 
             input_ids.append(best_id)
 
@@ -153,7 +158,7 @@ class constrained_decoding():
         lenf = len(s)
         # lp is len pattern
         # we started with as its when we start reputation on pupose till the half 
-        for lp in range (1 ,lenf // 2 + 1):
+        for lp in range (4 ,lenf // 2 + 1):
             if s[lenf - lp : lenf] == s[lenf - lp * 2 : lenf - lp]:
                 return True
         return False
@@ -162,7 +167,7 @@ class constrained_decoding():
     # if it was hellohellohellohello -> hello 
     def strip_duplicated(self, s : str) -> str:
         lenf = len(s)
-        for pl in range(1, lenf // 2 + 1):
+        for pl in range(4, lenf // 2 + 1):
             pattern = s[lenf - pl : lenf] # hello is the pattern 
             if s[lenf - 2 * pl : lenf - pl] == pattern:
                 while s.endswith(pattern) and len(s) > pl:
