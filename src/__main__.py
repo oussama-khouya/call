@@ -14,7 +14,7 @@ import argparse
 parser_00 = argparse.ArgumentParser(description="maybe_one_day_constained decoding")
 parser_00.add_argument("--functions_definition", type=str, default="data/input/functions_definition.json", help="Path to the functions definition JSON file")
 parser_00.add_argument("--input", type=str, default="data/input/function_calling_tests.json", help="path to the function calling tests")
-parser_00.add_argument("--output", type=str, default="path to the function calling results")
+parser_00.add_argument("--output", type=str, default="data/output/function_calling_results.json")
 
 args = parser_00.parse_args()
 
