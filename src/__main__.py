@@ -72,6 +72,8 @@ def main():
         print(f'[{i} / {len(prompts)}] / "{p.prompt}"')
         try:
             result : FunctionCallResult =  decoder.process_prompt(functions, p.prompt)
+            if result is None:
+                return
             results.append(result)
             #for display
             print(f"  -> {result.name}({result.parameters})")

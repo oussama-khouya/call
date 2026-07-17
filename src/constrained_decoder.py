@@ -39,7 +39,10 @@ class constrained_decoding():
         
         #using the input ids i should select the function name
         #create a function that do that job (picking the right function name) its a function that pick from a list of things 
-        fn_name : str = self.generate_function_name(input_ids,[f.name for f in functions])
+        fn_name : str = self.generate_function_name(input_ids,[f.name for f in functions] + ["fn_none"])
+        if fn_name == "fn_none":
+            print(f'Error: No matching function found for prompt: "{user_prompt}"')
+            return None
         #use next we generator expretion () to check function by function we generate the function object
         fn : functiondef = next((f for f in functions if f.name == fn_name), functions[0])
 

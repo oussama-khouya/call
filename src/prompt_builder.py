@@ -26,6 +26,8 @@ def prompt_builder(functions : list[functiondef], user_prompt) -> str:
         f"- To match all vowels: [aeiouAEIOU]\n"
         f"- To match a word exactly: cat\n"
         f"- replacement is the exact literal replacement string\n\n"
+        f"- If the user request does not match any available function, "
+        f"use fn_none with no parameters\n\n"
         f"User request: {user_prompt}\n\n"
         f"Respond with only a JSON object.\n"
         f"Examples:\n"

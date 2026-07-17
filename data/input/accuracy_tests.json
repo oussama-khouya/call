@@ -1,0 +1,12 @@
+[
+  { "prompt": "What is the sum of 2 and 3?" },
+  { "prompt": "add 10 and 20" },
+  { "prompt": "greet Alice" },
+  { "prompt": "what is the meaning of life?" },
+  { "prompt": "reverse the string hello" },
+  { "prompt": "get square root of 16" },
+  { "prompt": "substitute hello with world in hello there using regex" },
+  { "prompt": "add 999999999 and 0" },
+  { "prompt": "greet " },
+  { "prompt": "should I add 5 and 5 or should I just reverse the string apple?" }
+]
