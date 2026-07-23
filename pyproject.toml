@@ -7,6 +7,7 @@ dependencies = [
     "pydantic>=2.0.0",
     "numpy>=1.24.0",
     "llm-sdk",
+    "moulinette",
 ]
 
 [build-system]
@@ -18,6 +19,7 @@ packages = ["src"]
 
 [tool.uv.sources]
 llm-sdk = { path = "llm_sdk", editable = true }
+moulinette = { path = "moulinette", editable = true }
 
 [dependency-groups]
 dev = [
