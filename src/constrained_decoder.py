@@ -124,20 +124,9 @@ class constrained_decoding:
                     
                 # Regex Brute-Force Formatter
                 if p_name == "regex":
-                    # VOWELS TEST: Fix Python-incompatible possessive quantifiers
-                    # (LLM sometimes generates "aeiouAEIOU++")
-                    val_str = val_str.replace("++", "+")
+
                     
-                    # VOWELS TEST: Fix unclosed brackets and stuttering prefixes
-                    # (Fixes "aeiouAEIOU[ae" -> "[aeiouAEIOU]")
-                    while val_str.count("[") > val_str.count("]"):
-                        last_bracket = val_str.rfind("[")
-                        prefix_str = val_str[:last_bracket]
-                        suffix_str = val_str[last_bracket+1:]
-                        if prefix_str and suffix_str and prefix_str.startswith(suffix_str) and "[" not in prefix_str:
-                            val_str = "[" + prefix_str + "]"
-                        else:
-                            val_str = val_str[:last_bracket]
+            
                             
                     # NUMBERS TEST: Fix unclosed parentheses
                     # (Fixes "([0-9]+)\\s([" -> "([0-9]+)\\s")
@@ -159,11 +148,7 @@ class constrained_decoding:
                     if "word" in user_prompt.lower() and val_str.isalpha():
                         val_str = f"\\b{val_str}\\b"
                 
-                elif p_name == "replacement":
-                    # VOWELS TEST: Safe catch for the asterisk repetition bug
-                    # (Collapses "**" down to "*")
-                    if set(val_str) == {"*"}:
-                        val_str = "*"
+    
 
                 args[p_name] = val_str
                 prefix += ' "' + val_str + '"'
