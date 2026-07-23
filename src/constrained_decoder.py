@@ -121,6 +121,50 @@ class constrained_decoding:
                 ).lstrip()
                 if p_name == "path" and "\\\\" in val_str:
                     val_str = val_str.replace("\\\\", "\\")
+                    
+                # Regex Brute-Force Formatter
+                if p_name == "regex":
+                    # VOWELS TEST: Fix Python-incompatible possessive quantifiers
+                    # (LLM sometimes generates "aeiouAEIOU++")
+                    val_str = val_str.replace("++", "+")
+                    
+                    # VOWELS TEST: Fix unclosed brackets and stuttering prefixes
+                    # (Fixes "aeiouAEIOU[ae" -> "[aeiouAEIOU]")
+                    while val_str.count("[") > val_str.count("]"):
+                        last_bracket = val_str.rfind("[")
+                        prefix_str = val_str[:last_bracket]
+                        suffix_str = val_str[last_bracket+1:]
+                        if prefix_str and suffix_str and prefix_str.startswith(suffix_str) and "[" not in prefix_str:
+                            val_str = "[" + prefix_str + "]"
+                        else:
+                            val_str = val_str[:last_bracket]
+                            
+                    # NUMBERS TEST: Fix unclosed parentheses
+                    # (Fixes "([0-9]+)\\s([" -> "([0-9]+)\\s")
+                    while val_str.count("(") > val_str.count(")"):
+                        val_str = val_str[:val_str.rfind("(")]
+                        
+                    # NUMBERS TEST: Drop trailing whitespace matcher
+                    # (Fixes "([0-9]+)\\s" -> "([0-9]+)")
+                    if val_str.endswith("\\s"):
+                        val_str = val_str[:-2]
+                        
+                    # CAT TEST & NUMBERS TEST: Drop trailing garbage
+                    # (Fixes "cat$|" -> "cat" and strips stray backslashes)
+                    while val_str.endswith(("|", "$", "\\")):
+                        val_str = val_str[:-1]
+                        
+                    # CAT TEST: Add missing word boundaries
+                    # (Fixes "cat" -> "\bcat\b" if the prompt asked to replace a "word")
+                    if "word" in user_prompt.lower() and val_str.isalpha():
+                        val_str = f"\\b{val_str}\\b"
+                
+                elif p_name == "replacement":
+                    # VOWELS TEST: Safe catch for the asterisk repetition bug
+                    # (Collapses "**" down to "*")
+                    if set(val_str) == {"*"}:
+                        val_str = "*"
+
                 args[p_name] = val_str
                 prefix += ' "' + val_str + '"'
 
@@ -207,6 +251,12 @@ class constrained_decoding:
 
     def is_duplicate(self, s: str) -> bool:
         lenf = len(s)
+
+        # catch short runs like "*****" that the pattern-based
+        # check below can't see (it needs length >= 8 to even try)
+        if lenf >= 3 and len(set(s[-3:])) == 1:
+            return True
+
         # lp is len pattern
         # we started with as its when we start reputation on pupose till
         # the half
@@ -219,6 +269,15 @@ class constrained_decoding:
     # if it was hellohellohellohello -> hello
     def strip_duplicated(self, s: str) -> str:
         lenf = len(s)
+
+        # collapse short single-char runs first (e.g. "*****" -> "*")
+        if lenf >= 3 and len(set(s[-3:])) == 1:
+            ch = s[-1]
+            i = lenf
+            while i > 0 and s[i - 1] == ch:
+                i -= 1
+            return s[:i] + ch
+
         for pl in range(4, lenf // 2 + 1):
             pattern = s[lenf - pl: lenf]  # hello is the pattern
             if s[lenf - 2 * pl: lenf - pl] == pattern:
@@ -289,7 +348,7 @@ class constrained_decoding:
             input_ids.append(best_id)
 
             # check if the model is stuck in repuation
-            if len(generated) > 10 and self.is_duplicate(generated):
+            if len(generated) >= 3 and self.is_duplicate(generated):
                 return self.strip_duplicated(generated)
 
         # return the result
