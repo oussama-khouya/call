@@ -124,12 +124,6 @@ class constrained_decoding:
 
                 # Regex Brute-Force Formatter
                 if p_name == "regex":
-
-<<<<<<< HEAD
-                
-                            
-=======
->>>>>>> 7912e5ae2ed2d00d661bab9540d6614a73b76442
                     # NUMBERS TEST: Fix unclosed parentheses
                     # (Fixes "([0-9]+)\\s([" -> "([0-9]+)\\s")
                     while val_str.count("(") > val_str.count(")"):
@@ -144,12 +138,6 @@ class constrained_decoding:
                     # (Fixes "cat$|" -> "cat" and strips stray backslashes)
                     while val_str.endswith(("|", "$", "\\")):
                         val_str = val_str[:-1]
-<<<<<<< HEAD
-                        
-                
-    
-=======
->>>>>>> 7912e5ae2ed2d00d661bab9540d6614a73b76442
 
                 args[p_name] = val_str
                 prefix += ' "' + val_str + '"'
@@ -323,7 +311,7 @@ class constrained_decoding:
 
             # the end of the string is a quote
             # check the quote score
-            if best_id == self._quote_id:
+            if best_id == self._quote_id or best_id is None:
                 return generated
 
             generated += self.str_tokens[best_id]
