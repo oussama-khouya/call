@@ -31,7 +31,7 @@ parser_00.add_argument(
     default="data/output/function_calling_results.json",
     help="Path to the output JSON file",
 )
-# parse the input 
+# parse the input
 args = parser_00.parse_args()
 
 
@@ -94,7 +94,7 @@ def main() -> None:
 
     # Save results to output file
     # model_dump from pydantic to dict
-    # jsondump write that into f as json 
+    # jsondump write that into f as json
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
     try:
