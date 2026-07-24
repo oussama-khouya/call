@@ -267,11 +267,7 @@ class constrained_decoding:
         self, input_ids: list[int], param_name: str = ""
     ) -> str:
         generated = ""
-        # explain what is regex and why we have to create a max char for it
-        if param_name == "regex":
-            max_char = 80
-        else:
-            max_char = 80
+        max_char = 80
 
         # add the quote id to the model so he knows that we are inside a str
         if self._quote_id is not None:
