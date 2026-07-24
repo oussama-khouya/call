@@ -31,7 +31,7 @@ parser_00.add_argument(
     default="data/output/function_calling_results.json",
     help="Path to the output JSON file",
 )
-
+# parse the input 
 args = parser_00.parse_args()
 
 
@@ -93,6 +93,8 @@ def main() -> None:
             continue
 
     # Save results to output file
+    # model_dump from pydantic to dict
+    # jsondump write that into f as json 
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -101,7 +103,6 @@ def main() -> None:
                 [r.model_dump() for r in results],
                 f,
                 indent=2,
-                ensure_ascii=True,
             )
         print(f"\nDone. {len(results)} result(s) written to {args.output}")
     except Exception as e:

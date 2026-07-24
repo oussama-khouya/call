@@ -125,8 +125,7 @@ class constrained_decoding:
                 # Regex Brute-Force Formatter
                 if p_name == "regex":
 
-                    
-            
+                
                             
                     # NUMBERS TEST: Fix unclosed parentheses
                     # (Fixes "([0-9]+)\\s([" -> "([0-9]+)\\s")
@@ -143,10 +142,6 @@ class constrained_decoding:
                     while val_str.endswith(("|", "$", "\\")):
                         val_str = val_str[:-1]
                         
-                    # CAT TEST: Add missing word boundaries
-                    # (Fixes "cat" -> "\bcat\b" if the prompt asked to replace a "word")
-                    if "word" in user_prompt.lower() and val_str.isalpha():
-                        val_str = f"\\b{val_str}\\b"
                 
     
 
@@ -326,7 +321,7 @@ class constrained_decoding:
 
             # the end of the string is a quote
             # check the quote score
-            if best_id == self._quote_id or best_id is None:
+            if best_id == self._quote_id:
                 return generated
 
             generated += self.str_tokens[best_id]
