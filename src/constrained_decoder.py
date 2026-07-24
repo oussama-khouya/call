@@ -121,29 +121,35 @@ class constrained_decoding:
                 ).lstrip()
                 if p_name == "path" and "\\\\" in val_str:
                     val_str = val_str.replace("\\\\", "\\")
-                    
+
                 # Regex Brute-Force Formatter
                 if p_name == "regex":
 
+<<<<<<< HEAD
                 
                             
+=======
+>>>>>>> 7912e5ae2ed2d00d661bab9540d6614a73b76442
                     # NUMBERS TEST: Fix unclosed parentheses
                     # (Fixes "([0-9]+)\\s([" -> "([0-9]+)\\s")
                     while val_str.count("(") > val_str.count(")"):
                         val_str = val_str[:val_str.rfind("(")]
-                        
+
                     # NUMBERS TEST: Drop trailing whitespace matcher
                     # (Fixes "([0-9]+)\\s" -> "([0-9]+)")
                     if val_str.endswith("\\s"):
                         val_str = val_str[:-2]
-                        
+
                     # CAT TEST & NUMBERS TEST: Drop trailing garbage
                     # (Fixes "cat$|" -> "cat" and strips stray backslashes)
                     while val_str.endswith(("|", "$", "\\")):
                         val_str = val_str[:-1]
+<<<<<<< HEAD
                         
                 
     
+=======
+>>>>>>> 7912e5ae2ed2d00d661bab9540d6614a73b76442
 
                 args[p_name] = val_str
                 prefix += ' "' + val_str + '"'
@@ -272,11 +278,7 @@ class constrained_decoding:
         self, input_ids: list[int], param_name: str = ""
     ) -> str:
         generated = ""
-        # explain what is regex and why we have to create a max char for it
-        if param_name == "regex":
-            max_char = 12
-        else:
-            max_char = 80
+        max_char = 80
 
         # add the quote id to the model so he knows that we are inside a str
         if self._quote_id is not None:

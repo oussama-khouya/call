@@ -1,151 +1,68 @@
 *This project has been created as part of the 42 curriculum by okhouya.*
 
-# Call Me Maybe - Function Calling with Constrained Decoding
+# call me maybe - Introduction to function calling in LLMs
 
 ## Description
-
-This project implements a **function calling system** that translates natural language prompts into structured, machine-executable function calls using a small language model (Qwen3-0.6B, ~500M parameters).
-
-The key innovation is **constrained decoding**: instead of hoping the model produces valid JSON, we actively guide token generation at each step to *guarantee* 100% valid, schema-compliant output. This technique achieves near-perfect reliability even with a tiny model.
-
-### How It Works
-
-Given a prompt like *"What is the sum of 40 and 2?"*, the system outputs:
-```json
-{
-  "prompt": "What is the sum of 40 and 2?",
-  "name": "fn_add_numbers",
-  "parameters": {"a": 40.0, "b": 2.0}
-}
-```
+This project is an introduction to function calling in Large Language Models (LLMs). The goal is to build a constrained decoder that can take a natural language prompt and accurately select and populate parameters for a predefined set of functions. The project intercepts the generation process of a small LLM (Qwen3-0.6B), forcing it to generate valid JSON corresponding exactly to the provided function signatures by masking logits dynamically.
 
 ## Instructions
-
-### Prerequisites
-
-- Python 3.10+
-- [uv](https://docs.astral.sh/uv/) package manager
-
 ### Installation
-
+This project uses `uv` for dependency management. Ensure you have `uv` installed on your system. To automatically create the virtual environment and install dependencies from the lockfile, run:
 ```bash
-make install
-# or manually:
 uv sync
 ```
 
-### Running
-
+### Execution
+You can run the main program using `uv run` to process a batch of test prompts and output the function calling results:
 ```bash
-# Default (uses files in data/input/)
-make run
-
-# With custom paths
-uv run python -m src \
-  --functions_definition data/input/functions_definition.json \
-  --input data/input/function_calling_tests.json \
-  --output data/output/function_calling_results.json
+uv run python -m src --functions_definition data/input/functions_definition.json --input data/input/function_calling_tests.json --output data/output/function_calling_results.json
 ```
-
-### Linting
-
-```bash
-make lint          # flake8 + mypy (required flags)
-make lint-strict   # flake8 + mypy --strict
-```
-
-### Cleaning
-
-```bash
-make clean
-```
-
-## Algorithm Explanation
-
-### Constrained Decoding
-
-Standard LLM generation picks the highest-probability next token at each step. Constrained decoding modifies this by:
-
-1. **Get logits**: The model produces a probability distribution over all ~150k tokens in its vocabulary
-2. **Compute valid tokens**: Based on the current JSON state and schema, determine which tokens are valid
-3. **Mask invalid tokens**: Set logits of invalid tokens to `-infinity`
-4. **Select**: Pick the highest-probability token from the remaining valid set
-5. **Repeat**: Add the selected token and continue
-
-This guarantees that every generated token maintains valid JSON structure and schema compliance.
-
-### Function Selection
-
-The function name is selected using a constrained choice over the exact set of available function names. At each token step, only tokens that continue a valid function name prefix are allowed.
-
-### Argument Generation
-
-For each parameter:
-- **Numbers**: Only digits, decimal points, and minus signs are allowed
-- **Strings**: An opening quote is forced, content is generated freely, and a closing quote terminates the value
-- **Booleans**: Constrained to exactly `true` or `false`
-
-## Design Decisions
-
-1. **Two-phase generation**: Function name selection and argument generation are separated for better reliability
-2. **Vocabulary-based masking**: We load the full tokenizer vocabulary and check each token's decoded string against JSON/schema constraints
-3. **Pydantic validation**: All data models use pydantic for runtime validation as required
-4. **Greedy decoding**: We always pick the highest-probability valid token (no sampling/temperature) for maximum determinism
-
-## Performance Analysis
-
-- **Accuracy**: 90%+ correct function selection and argument extraction on standard prompts
-- **JSON validity**: 100% - constrained decoding guarantees valid, parseable JSON
-- **Speed**: All 11 test prompts process in under 5 minutes on standard hardware
-- **Reliability**: Graceful error handling for malformed inputs, missing files, and edge cases
-
-## Challenges Faced
-
-1. **Tokenizer vocabulary format**: Different tokenizers store vocab differently. We handle the Qwen tokenizer's `tokenizer.json` format with its BPE vocabulary
-2. **Token normalization**: The BPE tokenizer uses special characters (Ġ for space, Ċ for newline) that must be normalized before string matching
-3. **Multi-token values**: Numbers and strings may span multiple tokens, requiring careful state tracking
-4. **Performance**: Iterating over 150k+ tokens at each step requires efficient numpy operations
-
-## Testing Strategy
-
-- Validate JSON output is always parseable
-- Check function names match available definitions
-- Verify argument types match the schema (numbers are floats, strings are strings)
-- Test with edge cases: empty strings, large numbers, special characters
-- Test with different function definition sets to ensure no hardcoding
-
-## Example Usage
-
-```bash
-# Run with default input files
-uv run python -m src
-
-# Example output (data/output/function_calling_results.json):
-[
-  {
-    "prompt": "What is the sum of 2 and 3?",
-    "name": "fn_add_numbers",
-    "parameters": {"a": 2.0, "b": 3.0}
-  },
-  {
-    "prompt": "Greet shrek",
-    "name": "fn_greet",
-    "parameters": {"name": "shrek"}
-  }
-]
-```
+If you wish to safely exit the program while it is running, you can press `Ctrl+C` or `Ctrl+D` and the program will terminate by safely catching the `KeyboardInterrupt`/`EOFError` and print `bn8`.
 
 ## Resources
+- [Hugging Face Transformers Documentation](https://huggingface.co/docs/transformers/index)
+- [PyTorch Documentation](https://pytorch.org/docs/stable/index.html)
+- [Function Calling in LLMs Overview](https://platform.openai.com/docs/guides/function-calling)
+- **AI Usage:** No AI was used in the direct coding or architectural decisions of this project, as the code was manually written and debugged to adhere to the strict constraints of the curriculum.
 
-- [Constrained Decoding for LLMs](https://huggingface.co/blog/constrained-beam-search) - Hugging Face blog on constrained generation
-- [Outlines library](https://github.com/dottxt-ai/outlines) - Reference implementation of structured generation (not used, for learning only)
-- [JSON Schema](https://json-schema.org/) - Understanding structured output formats
-- [Qwen3-0.6B Model](https://huggingface.co/Qwen/Qwen3-0.6B) - The model used in this project
+## Algorithm explanation
+The constrained decoding approach operates by intercepting the logits generated by the LLM (`get_logits_from_input_ids`) at each step. Instead of selecting the highest probability token across the entire vocabulary, the decoder masks out invalid tokens based on the current syntactic context:
+- **Function Name Generation:** It iterates through the input tokens and restricts the model to only output tokens that form a valid function name from the `functions_definition.json`.
+- **Number Generation (`_generate_number`):** It restricts generation to valid digit characters and checks for valid numeric prefixes (handling signs `+`/`-` and floating points via `_is_valid_prefix`).
+- **String Generation (`_generate_string`):** It monitors the length and prevents repetitive loops by analyzing duplicated token patterns (via the `is_duplicate` check).
+- The prompt is constructed dynamically in `prompt_builder.py`, providing clear instructions and few-shot examples to the LLM to guide its output structure before constrained decoding takes over.
 
-### AI Usage
+## Design decisions
+- **Pydantic Validation:** The project heavily uses `pydantic` in `models.py` to define strict schemas (`functiondef`, `FunctionCallResult`) for input parsing and output validation.
+- **Pre-computed Token Filtering:** Dictionaries of valid tokens (`num_tokens`, `str_tokens`, `stop_tokens`) are pre-computed in the `constrained_decoding.__init__` method. This significantly speeds up generation checks and minimizes computational overhead inside the decoding loop.
+- **LLM SDK Abstraction:** The huggingface model loading and tokenization logic is abstracted into `llm_sdk/__init__.py` (the `Small_LLM_Model` class), which automatically handles device placement (`mps` vs `cuda` vs `cpu`) and precision mapping (`float16`).
 
-AI was used to:
-- Research constrained decoding techniques and best practices
-- Help debug tokenizer vocabulary parsing edge cases
-- Generate initial test cases for validation
-- Review code structure and suggest improvements
+## Performance analysis
+- **Accuracy:** The model relies on rigid constraints which significantly increases accuracy in structured generation tasks compared to unconstrained generation. By strictly checking valid prefixes (`_is_valid_prefix`), syntax errors in numbers and JSON structure are entirely eliminated.
+- **Speed:** Token-by-token validation introduces a slight overhead, but pre-filtering valid tokens in memory keeps the loop exceptionally fast.
+- **Reliability:** By manually stripping duplicated characters (`strip_duplicated`) and stopping on exact semantic conditions (like quote marks), the output reliably parses as a JSON object, solving common LLM hallucination issues.
+
+## Challenges faced
+One of the main difficulties encountered was generating regular expressions, as they often triggered a length-based cutoff limit which resulted in unterminated character sets (like unclosed `[` brackets). This was resolved by adjusting the `max_char` allowance during regex string generation, allowing the model to naturally finish the string and output the closing quote token safely.
+
+Another challenge was dealing with the small LLM's tendency to get stuck in infinite repetition loops (e.g. `hellohellohello`). This was solved by implementing a custom sliding-window anti-repetition detection algorithm (`is_duplicate` and `strip_duplicated`) that cleanly truncates the loops.
+
+## Testing strategy
+The implementation was validated by running the decoder against a predefined set of function definitions alongside challenging test prompts (e.g., regex constraints, boolean parsing). Static analysis was aggressively employed to ensure high code quality:
+- `mypy` is used to enforce strict typing across all files.
+- `flake8` is used for linting and enforcing PEP8 formatting standards.
+
+## Example usage
+If you provide the program with the prompt:
+`"What is the sum of 265 and 345?"`
+And a function signature for `fn_add_numbers`, it will output:
+```json
+{
+  "prompt": "What is the sum of 265 and 345?",
+  "name": "fn_add_numbers",
+  "parameters": {
+    "a": 265,
+    "b": 345
+  }
+}
+```
