@@ -121,34 +121,24 @@ class constrained_decoding:
                 ).lstrip()
                 if p_name == "path" and "\\\\" in val_str:
                     val_str = val_str.replace("\\\\", "\\")
-                    
+
                 # Regex Brute-Force Formatter
                 if p_name == "regex":
 
-                    
-            
-                            
                     # NUMBERS TEST: Fix unclosed parentheses
                     # (Fixes "([0-9]+)\\s([" -> "([0-9]+)\\s")
                     while val_str.count("(") > val_str.count(")"):
                         val_str = val_str[:val_str.rfind("(")]
-                        
+
                     # NUMBERS TEST: Drop trailing whitespace matcher
                     # (Fixes "([0-9]+)\\s" -> "([0-9]+)")
                     if val_str.endswith("\\s"):
                         val_str = val_str[:-2]
-                        
+
                     # CAT TEST & NUMBERS TEST: Drop trailing garbage
                     # (Fixes "cat$|" -> "cat" and strips stray backslashes)
                     while val_str.endswith(("|", "$", "\\")):
                         val_str = val_str[:-1]
-                        
-                    # CAT TEST: Add missing word boundaries
-                    # (Fixes "cat" -> "\bcat\b" if the prompt asked to replace a "word")
-                    if "word" in user_prompt.lower() and val_str.isalpha():
-                        val_str = f"\\b{val_str}\\b"
-                
-    
 
                 args[p_name] = val_str
                 prefix += ' "' + val_str + '"'
@@ -279,7 +269,7 @@ class constrained_decoding:
         generated = ""
         # explain what is regex and why we have to create a max char for it
         if param_name == "regex":
-            max_char = 12
+            max_char = 80
         else:
             max_char = 80
 

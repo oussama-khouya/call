@@ -1,151 +1,68 @@
 *This project has been created as part of the 42 curriculum by okhouya.*
 
-# Call Me Maybe - Function Calling with Constrained Decoding
+# call me maybe - Introduction to function calling in LLMs
 
 ## Description
-
-This project implements a **function calling system** that translates natural language prompts into structured, machine-executable function calls using a small language model (Qwen3-0.6B, ~500M parameters).
-
-The key innovation is **constrained decoding**: instead of hoping the model produces valid JSON, we actively guide token generation at each step to *guarantee* 100% valid, schema-compliant output. This technique achieves near-perfect reliability even with a tiny model.
-
-### How It Works
-
-Given a prompt like *"What is the sum of 40 and 2?"*, the system outputs:
-```json
-{
-  "prompt": "What is the sum of 40 and 2?",
-  "name": "fn_add_numbers",
-  "parameters": {"a": 40.0, "b": 2.0}
-}
-```
+This project is an introduction to function calling in Large Language Models (LLMs). The goal is to build a constrained decoder that can take a natural language prompt and accurately select and populate parameters for a predefined set of functions. The project intercepts the generation process of a small LLM, forcing it to generate valid JSON corresponding to function signatures.
 
 ## Instructions
-
-### Prerequisites
-
-- Python 3.10+
-- [uv](https://docs.astral.sh/uv/) package manager
-
 ### Installation
-
+Ensure you have Python 3.12+ installed. You can set up a virtual environment and install the required dependencies:
 ```bash
-make install
-# or manually:
-uv sync
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-### Running
-
+### Execution
+Run the main program to process a batch of test prompts and output function calling results:
 ```bash
-# Default (uses files in data/input/)
-make run
-
-# With custom paths
-uv run python -m src \
-  --functions_definition data/input/functions_definition.json \
-  --input data/input/function_calling_tests.json \
-  --output data/output/function_calling_results.json
+python -m src --functions_definition data/input/functions_definition.json --input data/input/function_calling_tests.json --output data/output/function_calling_results.json
 ```
-
-### Linting
-
-```bash
-make lint          # flake8 + mypy (required flags)
-make lint-strict   # flake8 + mypy --strict
-```
-
-### Cleaning
-
-```bash
-make clean
-```
-
-## Algorithm Explanation
-
-### Constrained Decoding
-
-Standard LLM generation picks the highest-probability next token at each step. Constrained decoding modifies this by:
-
-1. **Get logits**: The model produces a probability distribution over all ~150k tokens in its vocabulary
-2. **Compute valid tokens**: Based on the current JSON state and schema, determine which tokens are valid
-3. **Mask invalid tokens**: Set logits of invalid tokens to `-infinity`
-4. **Select**: Pick the highest-probability token from the remaining valid set
-5. **Repeat**: Add the selected token and continue
-
-This guarantees that every generated token maintains valid JSON structure and schema compliance.
-
-### Function Selection
-
-The function name is selected using a constrained choice over the exact set of available function names. At each token step, only tokens that continue a valid function name prefix are allowed.
-
-### Argument Generation
-
-For each parameter:
-- **Numbers**: Only digits, decimal points, and minus signs are allowed
-- **Strings**: An opening quote is forced, content is generated freely, and a closing quote terminates the value
-- **Booleans**: Constrained to exactly `true` or `false`
-
-## Design Decisions
-
-1. **Two-phase generation**: Function name selection and argument generation are separated for better reliability
-2. **Vocabulary-based masking**: We load the full tokenizer vocabulary and check each token's decoded string against JSON/schema constraints
-3. **Pydantic validation**: All data models use pydantic for runtime validation as required
-4. **Greedy decoding**: We always pick the highest-probability valid token (no sampling/temperature) for maximum determinism
-
-## Performance Analysis
-
-- **Accuracy**: 90%+ correct function selection and argument extraction on standard prompts
-- **JSON validity**: 100% - constrained decoding guarantees valid, parseable JSON
-- **Speed**: All 11 test prompts process in under 5 minutes on standard hardware
-- **Reliability**: Graceful error handling for malformed inputs, missing files, and edge cases
-
-## Challenges Faced
-
-1. **Tokenizer vocabulary format**: Different tokenizers store vocab differently. We handle the Qwen tokenizer's `tokenizer.json` format with its BPE vocabulary
-2. **Token normalization**: The BPE tokenizer uses special characters (Ġ for space, Ċ for newline) that must be normalized before string matching
-3. **Multi-token values**: Numbers and strings may span multiple tokens, requiring careful state tracking
-4. **Performance**: Iterating over 150k+ tokens at each step requires efficient numpy operations
-
-## Testing Strategy
-
-- Validate JSON output is always parseable
-- Check function names match available definitions
-- Verify argument types match the schema (numbers are floats, strings are strings)
-- Test with edge cases: empty strings, large numbers, special characters
-- Test with different function definition sets to ensure no hardcoding
-
-## Example Usage
-
-```bash
-# Run with default input files
-uv run python -m src
-
-# Example output (data/output/function_calling_results.json):
-[
-  {
-    "prompt": "What is the sum of 2 and 3?",
-    "name": "fn_add_numbers",
-    "parameters": {"a": 2.0, "b": 3.0}
-  },
-  {
-    "prompt": "Greet shrek",
-    "name": "fn_greet",
-    "parameters": {"name": "shrek"}
-  }
-]
-```
+If you wish to exit the program while it is running, you can press `Ctrl+C` or `Ctrl+D` and the program will safely terminate and print `bn8`.
 
 ## Resources
+- [Hugging Face Transformers Documentation](https://huggingface.co/docs/transformers/index)
+- [PyTorch Documentation](https://pytorch.org/docs/stable/index.html)
+- [Function Calling in LLMs Overview](https://platform.openai.com/docs/guides/function-calling)
+- Python `re` Module Documentation for Regular Expressions
 
-- [Constrained Decoding for LLMs](https://huggingface.co/blog/constrained-beam-search) - Hugging Face blog on constrained generation
-- [Outlines library](https://github.com/dottxt-ai/outlines) - Reference implementation of structured generation (not used, for learning only)
-- [JSON Schema](https://json-schema.org/) - Understanding structured output formats
-- [Qwen3-0.6B Model](https://huggingface.co/Qwen/Qwen3-0.6B) - The model used in this project
+## Algorithm explanation
+The constrained decoding approach operates by intercepting the logits generated by the LLM at each step. Instead of selecting the highest probability token across the entire vocabulary, it masks out invalid tokens based on the current syntactic context.
+- When generating numbers, it restricts generation to valid digit characters and checks for valid prefixes.
+- When generating strings, it monitors the length and prevents repetitive loops by analyzing duplicated token patterns.
+- It leverages a pre-defined vocabulary to dynamically filter tokens (e.g. `num_tokens`, `str_tokens`) to guarantee type safety for the generated JSON parameters.
 
-### AI Usage
+## Design decisions
+- **Token Filtering:** Dictionaries of valid tokens were pre-computed (`num_tokens`, `str_tokens`, `stop_tokens`) to speed up generation checks and minimize overhead during the decoding loop.
+- **Max Length Constraints:** A soft max character limit is enforced on string generation to prevent the model from infinitely generating tokens, ensuring the decoder remains responsive.
+- **Fallback Mechanisms:** In cases where the model fails to generate a valid token or gets stuck in a repetitive loop, the decoder falls back gracefully (e.g. returning `0.0` for invalid numbers or stripping trailing characters).
 
-AI was used to:
-- Research constrained decoding techniques and best practices
-- Help debug tokenizer vocabulary parsing edge cases
-- Generate initial test cases for validation
-- Review code structure and suggest improvements
+## Performance analysis
+- **Accuracy:** The model relies on rigid constraints which significantly increases accuracy in structured generation tasks compared to unconstrained generation. By strictly checking valid prefixes, syntax errors are mostly eliminated.
+- **Speed:** Token-by-token validation introduces some overhead, but pre-filtering valid tokens in `__init__` keeps the decoding loop fast.
+- **Reliability:** By manually stripping duplicated characters and stopping on exact conditions (like quote marks), the output reliably parses as a JSON object, solving common hallucinations.
+
+## Challenges faced
+One of the main difficulties encountered was generating regular expressions, as they often triggered a length-based cutoff limit which resulted in unterminated character sets (like unclosed `[` brackets). This was resolved by increasing the maximum character length allowance during regex string generation, allowing the model to naturally output the closing quote.
+
+Another challenge was dealing with small LLM looping behavior, which was mitigated by introducing a custom anti-repetition detection algorithm (`strip_duplicated`).
+
+## Testing strategy
+The implementation was validated using a predefined set of function definitions (`functions_definition.json`) alongside corresponding test prompts (`function_calling_tests.json`). Automated testing strategies included unit testing the parsing and syntax constraints (such as `_is_valid_prefix` and `is_duplicate`). Furthermore, static analysis tools like `mypy` and `flake8` were heavily used to enforce strict typing and code quality standards.
+
+## Example usage
+If you provide the program with the prompt:
+`"Replace all vowels in 'Programming is fun' with asterisks"`
+And a function signature for `fn_substitute_string_with_regex`, it will output:
+```json
+{
+  "prompt": "Replace all vowels in 'Programming is fun' with asterisks",
+  "name": "fn_substitute_string_with_regex",
+  "parameters": {
+    "source_string": "Programming is fun",
+    "regex": "[aeiouAEIOU]",
+    "replacement": "*"
+  }
+}
+```
